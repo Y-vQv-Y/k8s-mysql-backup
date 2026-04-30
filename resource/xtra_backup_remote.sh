@@ -18,6 +18,10 @@ echo "******开始备份******"
 echo "MySQL: $MYSQL_HOST:$MYSQL_PORT"
 echo "输出:  $BACKUP_FILE"
 
+# xtrabackup 8.0 即使做 TCP 远程备份也会查询 MySQL 服务端 @@datadir 并 cd 进去
+# 容器内 datadir 为 /bitnami/mysql/data/，宿主机需创建该目录
+mkdir -p /bitnami/mysql/data /tmp/xtrabackup_tmp
+
 /xtrabackup/cmd/bin/xtrabackup \
   --host=$MYSQL_HOST \
   --user=root \
