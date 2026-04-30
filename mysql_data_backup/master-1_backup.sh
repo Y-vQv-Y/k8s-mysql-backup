@@ -1,11 +1,14 @@
 #!/bin/bash
 # master-1_backup.sh - 触发 test-mysql-master-1 的全量备份到 slave-1 节点
+# 架构：控制节点 SSH 到 master 节点执行备份 → 控制节点 scp 传输到 slave 节点
 
 NAMESPACE="test"
 MASTER_POD="test-mysql-master-1"
 SLAVE_POD="test-mysql-slave-1"
 SVC_NAME="test-mysql-master-1-nodeport"
 MYSQL_PORT=3306
+BACKUP_DATE=$(date +%Y-%m-%d)
+BACKUP_FILE="/opt/app/xtra_full_${BACKUP_DATE}.xbstream"
 
 MASTER_NODE=$(kubectl get pod $MASTER_POD -n$NAMESPACE -o jsonpath='{.status.hostIP}')
 if [[ -z "$MASTER_NODE" ]]; then
@@ -25,7 +28,30 @@ if [[ -z "$SVC_IP" ]]; then
     exit 1
 fi
 
-echo "备份源: $MASTER_POD (节点: $MASTER_NODE, 服务: $SVC_IP:$MYSQL_PORT)"
-echo "备份目标: $SLAVE_POD (节点: $SLAVE_NODE)"
+echo "=========================================="
+echo "  MySQL 全量备份 - $MASTER_POD"
+echo "=========================================="
+echo "  Master Pod  : $MASTER_POD"
+echo "  Master 节点 : $MASTER_NODE"
+echo "  MySQL 地址  : $SVC_IP:$MYSQL_PORT"
+echo "  Slave 节点  : $SLAVE_NODE"
+echo "  备份文件    : $BACKUP_FILE"
+echo "=========================================="
 
-ssh root@$MASTER_NODE "/root/xtra_backup_remote.sh $SVC_IP $MYSQL_PORT $SLAVE_NODE"
+echo "[1/2] 在 master 节点执行备份（输出到节点本地文件）..."
+ssh root@$MASTER_NODE "/root/xtra_backup_remote.sh $SVC_IP $MYSQL_PORT $BACKUP_FILE"
+if [[ $? -ne 0 ]]; then
+    echo "错误：备份执行失败"
+    exit 1
+fi
+
+echo "[2/2] 从控制节点传输备份文件 $MASTER_NODE → $SLAVE_NODE ..."
+scp root@$MASTER_NODE:$BACKUP_FILE root@$SLAVE_NODE:$BACKUP_FILE
+if [[ $? -ne 0 ]]; then
+    echo "错误：备份文件传输失败"
+    exit 1
+fi
+
+echo ""
+echo "备份完成: $SLAVE_NODE:$BACKUP_FILE"
+echo "可在 slave 节点验证: ssh root@$SLAVE_NODE 'ls -lh $BACKUP_FILE'"

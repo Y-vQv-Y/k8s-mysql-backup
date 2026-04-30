@@ -1,20 +1,24 @@
 #!/bin/bash
-# xtra_backup_remote.sh - 在 master 节点上执行远程流式备份
-# 参数: $1=MySQL主机地址(Service ClusterIP) $2=MySQL端口 $3=备份目标节点IP
+# xtra_backup_remote.sh - 在 master 节点上执行备份，输出到本地文件
+# 参数: $1=MySQL主机 $2=MySQL端口 $3=备份文件路径
+# 不依赖 --defaults-file（TCP 备份无需本地 datadir），
+# 不依赖节点间 SSH（由控制节点负责 scp 传输）
 
 MYSQL_HOST=$1
 MYSQL_PORT=$2
-TARGET_IP=$3
+BACKUP_FILE=$3
 
-if [[ -z "$MYSQL_HOST" || -z "$MYSQL_PORT" || -z "$TARGET_IP" ]]; then
-    echo "用法: $0 <mysql_host> <mysql_port> <target_ip>"
-    echo "示例: $0 100.233.112.154 3306 10.203.15.83"
+if [[ -z "$MYSQL_HOST" || -z "$MYSQL_PORT" || -z "$BACKUP_FILE" ]]; then
+    echo "用法: $0 <mysql_host> <mysql_port> <backup_file>"
+    echo "示例: $0 100.233.112.154 3306 /opt/app/xtra_full_2026-05-01.xbstream"
     exit 1
 fi
 
 echo "******开始备份******"
+echo "MySQL: $MYSQL_HOST:$MYSQL_PORT"
+echo "输出:  $BACKUP_FILE"
+
 /xtrabackup/cmd/bin/xtrabackup \
-  --defaults-file=/xtrabackup/my.cnf \
   --host=$MYSQL_HOST \
   --user=root \
   --password=Qrcode@2022 \
@@ -25,13 +29,14 @@ echo "******开始备份******"
   --backup \
   --compress \
   --stream=xbstream \
-  --target-dir=/opt/app/databack \
-  | ssh -o "StrictHostKeyChecking no" root@$TARGET_IP "cat - > /opt/app/xtra_full_$(date +%Y-%m-%d).xbstream"
+  --target-dir=/tmp/xtrabackup_tmp \
+  > $BACKUP_FILE
 
-echo "===========当前数据备份主机名为：$HOSTNAME=============="
-echo "===========备份数据源地址：$MYSQL_HOST================="
-echo "===========备份数据源端口：$MYSQL_PORT================="
-echo "===========备份数据存储地址：$TARGET_IP=============="
-echo "*****************************"
-echo "**********备份完成***********"
-echo "*****************************"
+if [[ $? -eq 0 && -f "$BACKUP_FILE" ]]; then
+    echo "BACKUP_FILE=$BACKUP_FILE"
+    ls -lh $BACKUP_FILE
+    echo "===========备份完成==========="
+else
+    echo "错误：备份失败"
+    exit 1
+fi
